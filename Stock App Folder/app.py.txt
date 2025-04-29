@@ -1,0 +1,65 @@
+import yfinance as yf
+import pandas as pd
+import ta  # pip install ta
+import streamlit as st
+from datetime import datetime
+
+# Function to fetch data
+def get_stock_data(ticker, interval='1m', period='1d'):
+    try:
+        stock = yf.download(tickers=ticker, interval=interval, period=period)
+        return stock
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return pd.DataFrame()
+
+# Function to add indicators
+def add_indicators(df):
+    df['sma_20'] = df['Close'].rolling(window=20).mean()
+    df['sma_50'] = df['Close'].rolling(window=50).mean()
+    df['rsi'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
+    return df
+
+# Function to generate signals
+def generate_signals(df):
+    if df.empty or len(df) < 51:
+        return ['No signal - insufficient data']
+
+    latest = df.iloc[-1]
+    previous = df.iloc[-2]
+
+    signals = []
+
+    if previous['sma_20'] < previous['sma_50'] and latest['sma_20'] > latest['sma_50']:
+        signals.append('BUY (Golden Cross)')
+    elif previous['sma_20'] > previous['sma_50'] and latest['sma_20'] < latest['sma_50']:
+        signals.append('SELL (Death Cross)')
+
+    if latest['rsi'] < 30:
+        signals.append('BUY (RSI Oversold)')
+    elif latest['rsi'] > 70:
+        signals.append('SELL (RSI Overbought)')
+
+    return signals if signals else ['HOLD']
+
+# Streamlit interface
+st.title("📈 Real-Time Stock Signal Trainer")
+
+ticker = st.text_input("Enter stock ticker (e.g., TSLA, AAPL):", value="TSLA")
+interval = st.selectbox("Select interval:", ['1m', '5m', '15m', '1h', '1d'], index=0)
+period = st.selectbox("Select period:", ['1d', '5d', '1mo', '3mo'], index=0)
+
+if st.button("Run Signal Check"):
+    data = get_stock_data(ticker, interval=interval, period=period)
+    if not data.empty:
+        data = add_indicators(data)
+        signals = generate_signals(data)
+
+        st.subheader("Generated Signals")
+        for signal in signals:
+            st.write(f"- {signal}")
+
+        st.line_chart(data[['Close', 'sma_20', 'sma_50']].dropna())
+        st.line_chart(data['rsi'].dropna())
+    else:
+        st.warning("No data to show. Try a different ticker or time range.")
